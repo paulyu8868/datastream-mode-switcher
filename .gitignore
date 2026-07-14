@@ -1,0 +1,23 @@
+# Secrets — 절대 커밋 금지
+.env
+*.key
+*.pem
+server.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Salesforce CLI / 로컬 캐시
+.sfdx/
+.sf/
+*.log
+
+# 로컬 산출물
+datastream_backup_*.json
+
+# OS
+.DS_Store
+Thumbs.db

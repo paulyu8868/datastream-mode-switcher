@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <label>MONTHLY</label>
+    <protected>false</protected>
+    <values>
+        <field>Stream_Record_Id__c</field>
+        <value xsi:type="xsd:string">REPLACE_WITH_STREAM_RECORD_ID</value>
+    </values>
+    <values>
+        <field>Refresh_Mode__c</field>
+        <value xsi:type="xsd:string">TOTAL_REPLACE</value>
+    </values>
+    <values>
+        <field>Import_Directory__c</field>
+        <value xsi:type="xsd:string">hot-monthly</value>
+    </values>
+    <values>
+        <field>File_Name__c</field>
+        <value xsi:type="xsd:string">hot-monthly_*.csv</value>
+    </values>
+</CustomMetadata>

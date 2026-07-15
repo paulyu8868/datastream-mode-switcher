@@ -1,4 +1,4 @@
-# Data Cloud Data Stream Mode Scheduler
+# Data Stream Mode Scheduler
 
 Salesforce **Data Cloud (Data 360)** 데이터 스트림 하나의 설정(refresh mode · 소스 디렉토리 · 파일명)을 **하루 2번 자동으로 전환**해서, 한 스트림으로 **daily 증분(UPSERT)** 과 **monthly 전체 교체(TOTAL_REPLACE)** 를 모두 처리하는 org-native 솔루션.
 
@@ -6,7 +6,7 @@ Salesforce **Data Cloud (Data 360)** 데이터 스트림 하나의 설정(refres
 
 ---
 
-## 문제
+## 개요
 
 데이터 스트림 1개는 **(소스 디렉토리 · 파일명 · refresh mode · 스케줄) 조합을 하나만** 가질 수 있습니다. 그런데 실제 적재 요구는 두 가지였습니다:
 

@@ -4,15 +4,63 @@ Salesforce **Data Cloud(Data 360)** 데이터 스트림 하나의 설정(refresh
 
 ## Apex 클래스
 
-**`DataStreamModeFlipper`** (`Schedulable`) — 프로파일(`DAILY`/`MONTHLY`)을 받아 스트림 config 를 전환한다.
+**`DataStreamModeFlipper`** — 프로파일(`DAILY`/`MONTHLY`)을 받아 대상 데이터 스트림의 config 를 전환한다.
 
-- `execute()` → `Queueable`(`FlipJob`) 로 위임 (콜아웃 분리)
-- `FlipJob` 동작:
-  1. **GET** 으로 스트림 `status` 확인
-  2. `ACTIVE`/`Error`/`Inactive` 면 **PATCH** 로 `refreshMode` · `importDirectory` · `fileName` 전환
-  3. 그 외(처리중)면 **5분 뒤 재시도** (`AsyncOptions` 지연 큐, 최대 10회) — 처리중 스트림은 PATCH 가 400 으로 거부되기 때문
-- 전환 값은 **`Data_Stream_Profile__mdt`** (Custom Metadata) 의 `DAILY`/`MONTHLY` 레코드에서 읽음 → 재배포 없이 값 변경
-- 인증은 **Named Credential `DataCloud_Org`** (시크릿·토큰 처리는 플랫폼이 담당)
+### 구성 (클래스 / 메서드)
+
+| 요소 | 타입 | 역할 |
+|------|------|------|
+| `DataStreamModeFlipper` | `Schedulable` | 스케줄 진입점 |
+| ├ `execute(SchedulableContext)` | | `FlipJob` 을 큐에 넣음(콜아웃을 async 로 분리) |
+| `FlipJob` | `Queueable, Database.AllowsCallouts` | 콜아웃 실행 단위 (재시도 시 attempt 카운터 보유) |
+| ├ `execute(QueueableContext)` | | `flip()` 호출 |
+| `flip(profileName, attempt)` | `static` | CMDT 조회 + 상태 확인 + 분기(전환/재시도) 오케스트레이션 |
+| `getStatus(streamId)` | `static` | 스트림 status 조회 (**GET** 콜아웃) |
+| `doPatch(profile)` | `static` | config 전환 (**PATCH** 콜아웃) |
+| `Data_Stream_Profile__mdt` | Custom Metadata | `DAILY`/`MONTHLY` 별 `Stream_Record_Id__c`·`Refresh_Mode__c`·`Import_Directory__c`·`File_Name__c` 저장 |
+
+### 실행 순서
+
+```
+스케줄 발화(00:15 / 03:00)
+  └─ DataStreamModeFlipper.execute()          # ① 스케줄 진입
+       └─ System.enqueueJob(FlipJob(profile, 0))   # ② 콜아웃을 Queueable 로 분리
+            └─ FlipJob.execute() → flip(profile, 0)
+```
+
+1. **① 스케줄 진입** — `System.schedule` 로 등록된 잡이 발화, `execute()` 실행.
+2. **② 큐 분리** — 곧바로 `FlipJob` 을 enqueue. (Scheduled 컨텍스트의 콜아웃 제약 회피 + 재시도 체이닝 목적)
+3. **③ 프로파일 로드** — `Data_Stream_Profile__mdt.getInstance(profileName)` 로 대상 `streamId` · mode · dir · file 획득. (없으면 `FlipException`)
+4. **④ 상태 확인 (GET)** — `getStatus()` 가 스트림을 조회해 응답의 `status` 를 읽음.
+
+   ```
+   GET  callout:DataCloud_Org/services/data/v66.0/ssot/data-streams/{streamId}
+   →    { "status": "ACTIVE", ... }
+   ```
+5. **⑤ 분기**
+   - `status` 가 `ACTIVE` / `Error` / `Inactive` → **⑥ 전환**
+   - 그 외(처리중 등) → **⑦ 재시도** (처리중 스트림은 PATCH 가 400 으로 거부되기 때문)
+6. **⑥ 전환 (PATCH)** — `doPatch()` 가 config 를 프로파일 값으로 변경. 2xx 아니면 `FlipException`.
+
+   ```
+   PATCH  callout:DataCloud_Org/services/data/v66.0/ssot/data-streams/{streamId}
+   body   {
+            "refreshConfig":     { "refreshMode": "TOTAL_REPLACE" },
+            "advancedAttributes":{ "importDirectory": "hot-monthly",
+                                   "fileName": "hot-monthly_*.csv" }
+          }
+   ```
+7. **⑦ 재시도** — `attempt < 10` 이면 `AsyncOptions.MinimumQueueableDelayInMinutes = 5` 로 `FlipJob(profile, attempt+1)` 재큐(5분 뒤). `attempt ≥ 10` 이면 포기하며 `FlipException`.
+
+### 호출하는 API (2개, 모두 Named Credential 경유)
+
+| 순서 | 메서드 · 엔드포인트 | 목적 |
+|------|---------------------|------|
+| ④ | `GET  /services/data/v66.0/ssot/data-streams/{id}` | 현재 `status` 조회 (전환 가능 여부 판단) |
+| ⑥ | `PATCH /services/data/v66.0/ssot/data-streams/{id}` | `refreshMode` · `importDirectory` · `fileName` 전환 |
+
+- 두 호출 모두 `callout:DataCloud_Org` (Named Credential) 로 나가며, **OAuth 토큰 발급·주입은 플랫폼이 처리**(코드에 시크릿/토큰 없음).
+- 전환 값은 **`Data_Stream_Profile__mdt`** 에서 읽으므로 **코드 재배포 없이** 스트림 ID·디렉토리·파일명·모드를 바꿀 수 있음.
 
 ## 개요 — 왜 필요했나
 

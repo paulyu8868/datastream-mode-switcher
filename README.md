@@ -1,12 +1,13 @@
 # Data Stream Mode Switcher
 
-Salesforce **Data Cloud(Data 360)** 데이터 스트림 하나의 설정(refresh mode · 소스 디렉토리 · 파일명)을 **하루 2번 자동 전환**하는 Scheduled Apex. 한 스트림으로 **daily 증분(UPSERT)** 과 **monthly 전체 교체(TOTAL_REPLACE)** 를 모두 처리한다. 외부 인프라 없이 org 안(Scheduled Apex + Named Credential)에서 동작하며 코드에 시크릿이 없다.
+<img width="669" height="788" alt="image" src="https://github.com/user-attachments/assets/bc7b6210-5454-4c45-9002-a7a6507a00e6" />
 
-## Apex 클래스
+데이터 스트림의 **refresh mode** 및 **디렉토리,파일명** 등(S3 커넥터 한정)의 설정을 정해진 시간에 자동으로 변환 후 원상 복귀 시키는 **APEX 클래스**.
 
-**`DataStreamModeFlipper`** — 프로파일(`DAILY`/`MONTHLY`)을 받아 대상 데이터 스트림의 config 를 전환한다.
+- Upsert 모드로 스케줄링 된 데이터 스트림을 **주기적으로 Full refresh** 후 원상복귀
+- Apex 클래스 사용으로 외부 인프라 불필요 (Scheduled Apex + Named Credential)
 
-### 구성 (클래스 / 메서드)
+## Apex 클래스 (클래스 / 메서드)
 
 | 요소 | 타입 | 역할 |
 |------|------|------|
@@ -62,27 +63,14 @@ Salesforce **Data Cloud(Data 360)** 데이터 스트림 하나의 설정(refresh
 - 두 호출 모두 `callout:DataCloud_Org` (Named Credential) 로 나가며, **OAuth 토큰 발급·주입은 플랫폼이 처리**(코드에 시크릿/토큰 없음).
 - 전환 값은 **`Data_Stream_Profile__mdt`** 에서 읽으므로 **코드 재배포 없이** 스트림 ID·디렉토리·파일명·모드를 바꿀 수 있음.
 
-## 개요 — 왜 필요했나
-
-데이터 스트림 1개는 **(디렉토리 · 파일명 · refresh mode · 스케줄) 조합을 하나만** 가진다. 그런데 적재 요구는 둘이었다:
-
-| | 디렉토리 | 파일명 | 모드 | 업로드 |
-|---|---|---|---|---|
-| daily | `hot-daily` | `hot-daily_*.csv` | `UPSERT` (증분) | 08:00~22:00, 30분 간격 |
-| monthly | `hot-monthly` | `hot-monthly_*.csv` | `TOTAL_REPLACE` (전체 교체) | 매일 00:30, 마스터 스냅샷 |
-
-- native 스케줄 하나로는 둘을 동시에 못 담는다.
-- 게다가 데이터 스트림은 **"마지막 run 일시" 워터마크**로 파일을 거르는데, 이 워터마크는 **mode 무관·스트림당 공유**라 run 단위로 config 를 바꿔치기하면 daily 파일이 누락된다 → run 단위 swap 불가.
-
-**해결**: 스트림의 native 30분 스케줄은 그대로 두고, **config 만 하루 2번 flip**(각 config 를 몇 시간 유지 → 워터마크·비동기 문제 회피).
 
 ## 테스트 결과
 
-> _직접 작성 예정 (스크린샷 첨부)_
->
-> - MONTHLY flip → 스트림이 `TOTAL_REPLACE` / `hot-monthly` 로 전환
-> - DAILY flip → `UPSERT` / `hot-daily` 로 복귀
-> - 스케줄 자동 실행 (00:15 / 03:00 KST)
+<img width="1920" height="937" alt="image" src="https://github.com/user-attachments/assets/137f4a25-d7d3-4ce3-b6d7-9d0a1b5a89e0" />
+
+
+> - 00:15(KST): Upsert -> Full Refresh 전환, 디렉토리 경로 및 파일명 변경
+> - 03:00(KST): 원상복귀
 
 ## 아키텍처
 
